@@ -1,9 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import anthropic
-import base64
+import google.generativeai as genai
 import os
+import re
+import json
 from typing import List
 
 app = FastAPI()
@@ -15,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 @app.get("/")
 def root():
@@ -29,26 +30,9 @@ async def analisar(
     analystName: str = Form("")
 ):
     try:
-        # Montar conteúdo para o Claude
-        content = []
-
-        for arquivo in arquivos:
-            dados = await arquivo.read()
-            b64 = base64.standard_b64encode(dados).decode("utf-8")
-            content.append({
-                "type": "document",
-                "source": {
-                    "type": "base64",
-                    "media_type": "application/pdf",
-                    "data": b64
-                }
-            })
-
         surnames_info = f"Sobrenomes familiares para DESCONSIDERAR: {familyNames}" if familyNames else "Nenhum sobrenome familiar informado."
 
-        content.append({
-            "type": "text",
-            "text": f"""Você é especialista em apuração de renda para fins imobiliários no Brasil.
+        prompt = f"""Você é especialista em apuração de renda para fins imobiliários no Brasil.
 
 Analise os extratos bancários anexados e retorne SOMENTE um JSON válido.
 
@@ -86,22 +70,27 @@ Responda APENAS com JSON puro (sem markdown, sem texto antes ou depois):
   ],
   "observacoes": "perfil de renda e observações relevantes"
 }}"""
-        })
 
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": content}]
-        )
+        model = genai.GenerativeModel("gemini-1.5-flash")
 
-        text = response.content[0].text
-        # Extrair JSON
-        import re
+        parts = []
+        for arquivo in arquivos:
+            dados = await arquivo.read()
+            parts.append({
+                "inline_data": {
+                    "mime_type": "application/pdf",
+                    "data": dados
+                }
+            })
+        parts.append(prompt)
+
+        response = model.generate_content(parts)
+        text = response.text
+
         match = re.search(r'\{[\s\S]*\}', text)
         if not match:
             return JSONResponse(status_code=500, content={"error": "IA não retornou JSON válido"})
 
-        import json
         result = json.loads(match.group(0))
         return JSONResponse(content=result)
 
