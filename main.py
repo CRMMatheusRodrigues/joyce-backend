@@ -71,7 +71,7 @@ Responda APENAS com JSON puro (sem markdown, sem texto antes ou depois):
   "observacoes": "perfil de renda e observações relevantes"
 }}"""
 
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
 
         parts = []
         for arquivo in arquivos:
